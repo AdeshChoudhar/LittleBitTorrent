@@ -1,6 +1,9 @@
 import os
 import bencodepy
 import math
+import hashlib
+import uuid
+import requests
 
 if __name__ == "__main__":
     torrent_file_name = "torrents/pokemon.torrent"
@@ -53,3 +56,30 @@ if __name__ == "__main__":
             total_length += i[b"length"]
     total_pieces = math.ceil(total_length / piece_length)
     last_piece = total_length - piece_length * (total_pieces - 1)
+
+    info_hash = hashlib.sha1(bencodepy.encode(info)).digest()
+    peer_id = b'\x00\x00\x00\x00' + uuid.uuid4().bytes
+    try:
+        response = requests.get(
+            url=announce,
+            params={
+                "info_hash": info_hash,
+                "peer_id": peer_id,
+                "compact": 1
+            }
+        )
+        print("CONNECTED WITH THE TRACKER SUCCESSFULLY!")
+    except requests.exceptions.RequestException:
+        response = None
+        print("ERROR: CONNECTION WITH THE TRACKER FAILED!")
+        exit(1)
+    response = bencodepy.decode(response.content)
+
+    peers = list()
+    for i in range(0, len(response[b"peers"]), 6):
+        peer = response[b"peers"][i:i + 6]
+        peers.append({
+            "ip": ".".join([str(j) for j in peer[:4]]),
+            "port": int.from_bytes(peer[4:6], "big")
+        })
+    print("PEERS FETCHED SUCCESSFULLY!")
