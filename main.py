@@ -1,22 +1,16 @@
 import os
-import bencodepy
 import math
 import hashlib
 import uuid
-import requests
+import threading
+
+from helpers import *
 
 if __name__ == "__main__":
-    torrent_file_name = "torrents/pokemon.torrent"
-    with open(torrent_file_name, "rb") as torrent_file:
-        try:
-            file_data = bencodepy.decode(torrent_file.read())
-            print("FILE READ AND DECODED SUCCESSFULLY!")
-        except FileNotFoundError:
-            print("ERROR: FILE NOT FOUND!")
-            exit(1)
-        except bencodepy.exceptions.BencodeDecodeError:
-            print("ERROR: FILE CANNOT BE DECODED!")
-            exit(1)
+    torrent_file_name = "torrents/ubuntu.torrent"
+    file_data = read_decode_torrent_file(torrent_file_name)
+    if file_data is None:
+        exit(1)
 
     info, announce, optionals = dict(), "", dict()
     for i in file_data.keys():
@@ -59,27 +53,29 @@ if __name__ == "__main__":
 
     info_hash = hashlib.sha1(bencodepy.encode(info)).digest()
     peer_id = b'\x00\x00\x00\x00' + uuid.uuid4().bytes
-    try:
-        response = requests.get(
-            url=announce,
-            params={
-                "info_hash": info_hash,
-                "peer_id": peer_id,
-                "compact": 1
-            }
-        )
-        print("CONNECTED WITH THE TRACKER SUCCESSFULLY!")
-    except requests.exceptions.RequestException:
-        response = None
-        print("ERROR: CONNECTION WITH THE TRACKER FAILED!")
+    response = connect_with_tracker(announce, info_hash, peer_id, total_length)
+    if response is None:
         exit(1)
-    response = bencodepy.decode(response.content)
 
-    peers = list()
-    for i in range(0, len(response[b"peers"]), 6):
-        peer = response[b"peers"][i:i + 6]
-        peers.append({
-            "ip": ".".join([str(j) for j in peer[:4]]),
-            "port": int.from_bytes(peer[4:6], "big")
-        })
-    print("PEERS FETCHED SUCCESSFULLY!")
+    peers = fetch_peers(response)
+    print(f"NUMBER OF PEERS FETCHED: {len(peers)}")
+
+    pstrlen = int.to_bytes(19, 1, "big")
+    pstr = "BitTorrent protocol".encode()
+    reserved = "00000000".encode()
+    handshake_message = pstrlen + pstr + reserved + info_hash + peer_id
+    peer_handshake_threads = list()
+    for peer in peers:
+        thread = threading.Thread(
+            target=handshake_with_peer,
+            args=[peers, peer, handshake_message]
+        )
+        peer_handshake_threads.append(thread)
+        thread.setDaemon(True)
+        thread.start()
+
+    print("\nINITIATING HANDSHAKES...")
+    for i in range(len(peer_handshake_threads)):
+        peer_handshake_threads[i].join(10)
+        progress_bar(i + 1, len(peer_handshake_threads))
+    print(f"\nSUCCESSFUL HANDSHAKES: {len(peers)}")
