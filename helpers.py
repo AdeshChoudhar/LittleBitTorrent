@@ -17,7 +17,7 @@ def read_decode_torrent_file(torrent_file_name: str):
     return file_data
 
 
-def connect_with_http_tracker(announce, info_hash, peer_id, left):
+def connect_http_tracker(announce, info_hash, peer_id, left):
     response = None
     try:
         response = requests.get(
@@ -34,61 +34,65 @@ def connect_with_http_tracker(announce, info_hash, peer_id, left):
             }
         )
         response = bencodepy.decode(response.content)
-        print("CONNECTED WITH THE TRACKER SUCCESSFULLY!")
+        print("\nCONNECTED WITH THE TRACKER SUCCESSFULLY!")
     except requests.exceptions.RequestException:
-        print("ERROR: CONNECTION WITH THE TRACKER FAILED!")
+        print("\nERROR: CONNECTION WITH THE TRACKER FAILED!")
     return response
 
 
-def connect_with_udp_tracker(announce, info_hash, peer_id, left):
+def connect_udp_tracker(announce, info_hash, peer_id, left):
     response = None
     try:
-        connection_id = int("41727101980", 16).to_bytes(8, "big")
-        action = int.to_bytes(0, 4, "big")
-        transaction_id = int.to_bytes(uuid.uuid4().int % 2 ** 32, 4, "big")
-        connection_message = connection_id + action + transaction_id
-        tracker_url = announce[6:].split(":")[0]
-        tracker_port = int(announce[6:].split(":")[1].split("/")[0])
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as tracker_socket:
-            tracker_socket.sendto(connection_message, (tracker_url, tracker_port))
-            connection_response, address = tracker_socket.recvfrom(65536)
-            received_action = int.from_bytes(connection_response[:4], "big")
-            received_transaction_id = connection_response[4:8]
-            received_connection_id = connection_response[8:16]
-            if (received_action == 0) and (received_transaction_id == transaction_id):
-                action = int.to_bytes(1, 4, "big")
-                transaction_id = int.to_bytes(uuid.uuid4().int % 2 ** 32, 4, "big")
-                downloaded = int.to_bytes(0, 8, "big")
-                left = left.to_bytes(8, "big")
-                uploaded = int.to_bytes(0, 8, "big")
-                event = int.to_bytes(0, 4, "big")
-                ip = int.to_bytes(0, 4, "big")
-                key = int.to_bytes(uuid.uuid4().int % 2 ** 32, 4, "big")
-                num_want = int.to_bytes(-1, 4, "big", signed=True)
-                port = int.to_bytes(6889, 2, "big")
-                announce_message = received_connection_id + action + transaction_id + info_hash + peer_id + downloaded + left + uploaded + event + ip + key + num_want + port
-                tracker_socket.sendto(announce_message, (tracker_url, tracker_port))
-                announce_response, address = tracker_socket.recvfrom(65535)
-                received_action = int.from_bytes(announce_response[:4], "big")
-                received_transaction_id = announce_response[4:8]
-                if (received_action == 1) and (received_transaction_id == transaction_id):
-                    response = {
-                        b"interval": int.from_bytes(announce_response[8:12], "big"),
-                        b"incomplete": int.from_bytes(announce_response[12:16], "big"),
-                        b"complete": int.from_bytes(announce_response[16:20], "big"),
-                        b"peers": announce_response[20:]
-                    }
-                    print("CONNECTED WITH THE TRACKER SUCCESSFULLY!")
-                else:
-                    raise ConnectionError
-            else:
+            conn_id = int("41727101980", 16).to_bytes(8, "big")
+            action = int.to_bytes(0, 4, "big")
+            trans_id = int.to_bytes(uuid.uuid4().int % 2 ** 32, 4, "big")
+            conn_msg = conn_id + action + trans_id
+            tracker_url = announce[6:].split(":")[0]
+            tracker_port = int(announce[6:].split(":")[1].split("/")[0])
+            tracker_socket.sendto(conn_msg, (tracker_url, tracker_port))
+
+            conn_resp, address = tracker_socket.recvfrom(65536)
+            recv_action = int.from_bytes(conn_resp[:4], "big")
+            recv_trans_id = conn_resp[4:8]
+            recv_conn_id = conn_resp[8:16]
+            if not ((recv_action == 0) and (recv_trans_id == trans_id)):
                 raise ConnectionError
+
+            action = int.to_bytes(1, 4, "big")
+            trans_id = int.to_bytes(uuid.uuid4().int % 2 ** 32, 4, "big")
+            downloaded = int.to_bytes(0, 8, "big")
+            left = left.to_bytes(8, "big")
+            uploaded = int.to_bytes(0, 8, "big")
+            event = int.to_bytes(0, 4, "big")
+            ip = int.to_bytes(0, 4, "big")
+            key = int.to_bytes(uuid.uuid4().int % 2 ** 32, 4, "big")
+            num_want = int.to_bytes(-1, 4, "big", signed=True)
+            port = int.to_bytes(6889, 2, "big")
+            announce_message = recv_conn_id + action + trans_id + info_hash \
+                               + peer_id + downloaded + left + uploaded \
+                               + event + ip + key + num_want + port
+            tracker_socket.sendto(announce_message, (tracker_url, tracker_port))
+
+            announce_response, address = tracker_socket.recvfrom(65535)
+            recv_action = int.from_bytes(announce_response[:4], "big")
+            recv_trans_id = announce_response[4:8]
+            if not ((recv_action == 1) and (recv_trans_id == trans_id)):
+                raise ConnectionError
+
+            response = {
+                b"interval": int.from_bytes(announce_response[8:12], "big"),
+                b"incomplete": int.from_bytes(announce_response[12:16], "big"),
+                b"complete": int.from_bytes(announce_response[16:20], "big"),
+                b"peers": announce_response[20:]
+            }
+            print("\nCONNECTED WITH THE TRACKER SUCCESSFULLY!")
     except ConnectionError:
-        print("ERROR: CONNECTION WITH THE TRACKER FAILED!")
+        print("\nERROR: CONNECTION WITH THE TRACKER FAILED!")
     return response
 
 
-def fetch_peers(response: dict):
+def extract_peers(response: dict):
     peers = list()
     for i in range(0, len(response[b"peers"]), 6):
         peer = response[b"peers"][i:i + 6]
@@ -96,7 +100,7 @@ def fetch_peers(response: dict):
             "ip": ".".join([str(j) for j in peer[:4]]),
             "port": int.from_bytes(peer[4:6], "big")
         })
-    print("\nPEERS FETCHED SUCCESSFULLY!")
+    print("PEERS FETCHED SUCCESSFULLY!")
     return peers
 
 

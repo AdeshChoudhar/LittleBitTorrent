@@ -6,7 +6,7 @@ import threading
 from helpers import *
 
 if __name__ == "__main__":
-    torrent_file_name = "torrents/ubuntu.torrent"
+    torrent_file_name = input("TORRENT FILE PATH: ")
     file_data = read_decode_torrent_file(torrent_file_name)
     if file_data is None:
         exit(1)
@@ -35,31 +35,31 @@ if __name__ == "__main__":
             name = info[i].decode()
 
     is_multi_file_mode = b"files" in info.keys()
-    file, files, total_length = "", list(), 0
+    file, files, length = "", list(), 0
     if not is_multi_file_mode:
         files = info[b"name"].decode()
-        total_length = info[b"length"]
+        length = info[b"length"]
     else:
         for i in info[b"files"]:
             files.append({
                 "length": i[b"length"],
                 "path": os.path.join(*map(bytes.decode, i[b"path"]))
             })
-            total_length += i[b"length"]
-    total_pieces = math.ceil(total_length / piece_length)
-    last_piece = total_length - piece_length * (total_pieces - 1)
+            length += i[b"length"]
+    total_pieces = math.ceil(length / piece_length)
+    last_piece = length - piece_length * (total_pieces - 1)
 
     info_hash = hashlib.sha1(bencodepy.encode(info)).digest()
     peer_id = b'\x00\x00\x00\x00' + uuid.uuid4().bytes
     response = None
     if announce.startswith("http"):
-        response = connect_with_http_tracker(announce, info_hash, peer_id, total_length)
+        response = connect_http_tracker(announce, info_hash, peer_id, length)
     elif announce.startswith("udp"):
-        response = connect_with_udp_tracker(announce, info_hash, peer_id, total_length)
+        response = connect_udp_tracker(announce, info_hash, peer_id, length)
     if response is None:
         exit(1)
 
-    peers_fetch = fetch_peers(response)
+    peers_fetch = extract_peers(response)
     print(f"NUMBER OF PEERS FETCHED: {len(peers_fetch)}")
 
     pstrlen = int.to_bytes(19, 1, "big")
