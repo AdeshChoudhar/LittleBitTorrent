@@ -6,7 +6,7 @@ import threading
 from helpers import *
 
 if __name__ == "__main__":
-    torrent_file_name = "torrents/openshot.torrent"
+    torrent_file_name = "torrents/ubuntu.torrent"
     file_data = read_decode_torrent_file(torrent_file_name)
     if file_data is None:
         exit(1)
@@ -35,11 +35,10 @@ if __name__ == "__main__":
             name = info[i].decode()
 
     is_multi_file_mode = b"files" in info.keys()
-    file, length = "", 0
-    files, total_length = list(), 0
+    file, files, total_length = "", list(), 0
     if not is_multi_file_mode:
         files = info[b"name"].decode()
-        length = info[b"length"]
+        total_length = info[b"length"]
     else:
         for i in info[b"files"]:
             files.append({
@@ -60,8 +59,8 @@ if __name__ == "__main__":
     if response is None:
         exit(1)
 
-    peers = fetch_peers(response)
-    print(f"NUMBER OF PEERS FETCHED: {len(peers)}")
+    peers_fetch = fetch_peers(response)
+    print(f"NUMBER OF PEERS FETCHED: {len(peers_fetch)}")
 
     pstrlen = int.to_bytes(19, 1, "big")
     pstr = "BitTorrent protocol".encode()
@@ -69,10 +68,10 @@ if __name__ == "__main__":
     handshake_message = pstrlen + pstr + reserved + info_hash + peer_id
 
     peer_handshake_threads = list()
-    for peer in peers:
+    for peer in peers_fetch:
         thread = threading.Thread(
             target=handshake_with_peer,
-            args=[peers, peer, handshake_message]
+            args=[peer, handshake_message]
         )
         peer_handshake_threads.append(thread)
         thread.setDaemon(True)
@@ -80,6 +79,14 @@ if __name__ == "__main__":
 
     print("\nINITIATING HANDSHAKES...")
     for i in range(len(peer_handshake_threads)):
-        peer_handshake_threads[i].join(10)
+        peer_handshake_threads[i].join(5)
         progress_bar(i + 1, len(peer_handshake_threads))
-    print(f"\nSUCCESSFUL HANDSHAKES: {len(peers)}")
+
+    peers_handshake = list()
+    for peer in peers_fetch:
+        if peer.__contains__("handshake"):
+            peers_handshake.append(peer)
+    print(f"\nSUCCESSFUL HANDSHAKES: {len(peers_handshake)}")
+
+    for peer in peers_handshake:
+        parse_handshake_message(peer)

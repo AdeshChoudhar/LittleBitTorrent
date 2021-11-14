@@ -29,7 +29,8 @@ def connect_with_http_tracker(announce, info_hash, peer_id, left):
                 "uploaded": 0,
                 "downloaded": 0,
                 "left": left,
-                "compact": 1
+                "compact": 1,
+                "event": "started",
             }
         )
         response = bencodepy.decode(response.content)
@@ -51,7 +52,6 @@ def connect_with_udp_tracker(announce, info_hash, peer_id, left):
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as tracker_socket:
             tracker_socket.sendto(connection_message, (tracker_url, tracker_port))
             connection_response, address = tracker_socket.recvfrom(65536)
-
             received_action = int.from_bytes(connection_response[:4], "big")
             received_transaction_id = connection_response[4:8]
             received_connection_id = connection_response[8:16]
@@ -68,7 +68,6 @@ def connect_with_udp_tracker(announce, info_hash, peer_id, left):
                 port = int.to_bytes(6889, 2, "big")
                 announce_message = received_connection_id + action + transaction_id + info_hash + peer_id + downloaded + left + uploaded + event + ip + key + num_want + port
                 tracker_socket.sendto(announce_message, (tracker_url, tracker_port))
-
                 announce_response, address = tracker_socket.recvfrom(65535)
                 received_action = int.from_bytes(announce_response[:4], "big")
                 received_transaction_id = announce_response[4:8]
@@ -109,7 +108,7 @@ def progress_bar(count, total):
     print(f"[{bar}] {percentage}% {count}/{total}\r", end="")
 
 
-def handshake_with_peer(peers, peer, handshake_message):
+def handshake_with_peer(peer, handshake_message):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as peer_socket:
         peer_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
@@ -125,7 +124,21 @@ def handshake_with_peer(peers, peer, handshake_message):
                 pstrlen = int.from_bytes(received_handshake[0:1], "big")
                 info_hash = received_handshake[pstrlen + 9: pstrlen + 29]
                 if info_hash == handshake_message[pstrlen + 9: pstrlen + 29]:
-                    return
+                    peer["handshake"] = received_handshake[pstrlen + 49:]
         except OSError:
             pass
-        peers.remove(peer)
+
+
+def parse_handshake_message(peer):
+    index = 0
+    handshake = peer["handshake"]
+    message_length = int.from_bytes(handshake[index:index + 4], "big")
+    if message_length:
+        message_id = int.from_bytes(handshake[index + 4: index + 5], "big")
+        message = handshake[index + 5:]
+        if message_id == 20:
+            index += (4 + message_length)
+            message_id = int.from_bytes(handshake[index + 4:index + 5], "big")
+            message = handshake[index + 5:]
+        if message_id == 5:
+            peer["bitfield"] = message
