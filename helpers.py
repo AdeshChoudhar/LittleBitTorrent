@@ -1,7 +1,7 @@
 import socket
 import bencodepy
 import requests
-import sys
+import uuid
 
 
 def read_decode_torrent_file(torrent_file_name: str):
@@ -17,7 +17,7 @@ def read_decode_torrent_file(torrent_file_name: str):
     return file_data
 
 
-def connect_with_tracker(announce: str, info_hash: bytes, peer_id: bytes, left: int):
+def connect_with_http_tracker(announce, info_hash, peer_id, left):
     response = None
     try:
         response = requests.get(
@@ -39,6 +39,56 @@ def connect_with_tracker(announce: str, info_hash: bytes, peer_id: bytes, left: 
     return response
 
 
+def connect_with_udp_tracker(announce, info_hash, peer_id, left):
+    response = None
+    try:
+        connection_id = int("41727101980", 16).to_bytes(8, "big")
+        action = int.to_bytes(0, 4, "big")
+        transaction_id = int.to_bytes(uuid.uuid4().int % 2 ** 32, 4, "big")
+        connection_message = connection_id + action + transaction_id
+        tracker_url = announce[6:].split(":")[0]
+        tracker_port = int(announce[6:].split(":")[1].split("/")[0])
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as tracker_socket:
+            tracker_socket.sendto(connection_message, (tracker_url, tracker_port))
+            connection_response, address = tracker_socket.recvfrom(65536)
+
+            received_action = int.from_bytes(connection_response[:4], "big")
+            received_transaction_id = connection_response[4:8]
+            received_connection_id = connection_response[8:16]
+            if (received_action == 0) and (received_transaction_id == transaction_id):
+                action = int.to_bytes(1, 4, "big")
+                transaction_id = int.to_bytes(uuid.uuid4().int % 2 ** 32, 4, "big")
+                downloaded = int.to_bytes(0, 8, "big")
+                left = left.to_bytes(8, "big")
+                uploaded = int.to_bytes(0, 8, "big")
+                event = int.to_bytes(0, 4, "big")
+                ip = int.to_bytes(0, 4, "big")
+                key = int.to_bytes(uuid.uuid4().int % 2 ** 32, 4, "big")
+                num_want = int.to_bytes(-1, 4, "big", signed=True)
+                port = int.to_bytes(6889, 2, "big")
+                announce_message = received_connection_id + action + transaction_id + info_hash + peer_id + downloaded + left + uploaded + event + ip + key + num_want + port
+                tracker_socket.sendto(announce_message, (tracker_url, tracker_port))
+
+                announce_response, address = tracker_socket.recvfrom(65535)
+                received_action = int.from_bytes(announce_response[:4], "big")
+                received_transaction_id = announce_response[4:8]
+                if (received_action == 1) and (received_transaction_id == transaction_id):
+                    response = {
+                        b"interval": int.from_bytes(announce_response[8:12], "big"),
+                        b"incomplete": int.from_bytes(announce_response[12:16], "big"),
+                        b"complete": int.from_bytes(announce_response[16:20], "big"),
+                        b"peers": announce_response[20:]
+                    }
+                    print("CONNECTED WITH THE TRACKER SUCCESSFULLY!")
+                else:
+                    raise ConnectionError
+            else:
+                raise ConnectionError
+    except ConnectionError:
+        print("ERROR: CONNECTION WITH THE TRACKER FAILED!")
+    return response
+
+
 def fetch_peers(response: dict):
     peers = list()
     for i in range(0, len(response[b"peers"]), 6):
@@ -56,10 +106,10 @@ def progress_bar(count, total):
     bar_filled = round(bar_length * count / float(total))
     percentage = round(100.0 * count / float(total), 1)
     bar = f"{'=' * bar_filled}>{'-' * (bar_length - bar_filled - 1)}"
-    print("[{}] {}% {}/{}\r".format(bar, percentage, count, total), end="")
+    print(f"[{bar}] {percentage}% {count}/{total}\r", end="")
 
 
-def handshake_with_peer(peers: list, peer: dict, handshake_message: bytes):
+def handshake_with_peer(peers, peer, handshake_message):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as peer_socket:
         peer_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:

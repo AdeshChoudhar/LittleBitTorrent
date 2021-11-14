@@ -1,13 +1,12 @@
 import os
 import math
 import hashlib
-import uuid
 import threading
 
 from helpers import *
 
 if __name__ == "__main__":
-    torrent_file_name = "torrents/ubuntu.torrent"
+    torrent_file_name = "torrents/openshot.torrent"
     file_data = read_decode_torrent_file(torrent_file_name)
     if file_data is None:
         exit(1)
@@ -53,7 +52,11 @@ if __name__ == "__main__":
 
     info_hash = hashlib.sha1(bencodepy.encode(info)).digest()
     peer_id = b'\x00\x00\x00\x00' + uuid.uuid4().bytes
-    response = connect_with_tracker(announce, info_hash, peer_id, total_length)
+    response = None
+    if announce.startswith("http"):
+        response = connect_with_http_tracker(announce, info_hash, peer_id, total_length)
+    elif announce.startswith("udp"):
+        response = connect_with_udp_tracker(announce, info_hash, peer_id, total_length)
     if response is None:
         exit(1)
 
@@ -64,6 +67,7 @@ if __name__ == "__main__":
     pstr = "BitTorrent protocol".encode()
     reserved = "00000000".encode()
     handshake_message = pstrlen + pstr + reserved + info_hash + peer_id
+
     peer_handshake_threads = list()
     for peer in peers:
         thread = threading.Thread(
