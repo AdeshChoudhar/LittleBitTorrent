@@ -1,4 +1,22 @@
+from argparse import ArgumentParser
+from sys import exit
 from collections import OrderedDict
+
+
+def parse_arguments():
+    argumentParser = ArgumentParser()
+    argumentParser.add_argument(
+        "file",
+        type=str,
+        help="path of the torrent/metainfo file"
+    )
+    argumentParser.add_argument(
+        "-s",
+        "--show",
+        help="show contents of the torrent/metainfo file and exit",
+        action="store_true"
+    )
+    return argumentParser.parse_args()
 
 
 def throw_error(message):
