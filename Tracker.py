@@ -1,3 +1,4 @@
+import asyncio
 from uuid import uuid4
 from requests import get
 from requests import exceptions
@@ -5,7 +6,8 @@ from bencodepy import decode
 import socket
 from socket import AF_INET, SOCK_DGRAM
 
-from config import PEER_ID, PORT_NO, NUMWANT, KEY
+from Peer import Peer
+from config import PEER_ID, PORT_NO, NUMWANT, KEY, PEER_ID
 from util import throw_error
 
 
@@ -14,6 +16,8 @@ class Tracker:
         self.torrent = torrent
         self.announce = self.get_announce()
         self.response = self.get_response()
+        self.peers = self.get_peers()
+        asyncio.run(self.do_handshakes(self.torrent.info_hash))
 
     def get_announce(self):
         # TODO: Multitracker Metadata Extension
@@ -109,4 +113,23 @@ class Tracker:
                 }
         except ConnectionError:
             throw_error("CONNECTION WITH THE TRACKER FAILED!")
-        return response
+        else:
+            return response
+
+    def get_peers(self):
+        peers = list()
+        for i in range(0, len(self.response[b"peers"]), 6):
+            peer = self.response[b"peers"][i:i + 6]
+            ip = ".".join([str(j) for j in peer[:4]])
+            port = int.from_bytes(peer[4:6], "big")
+            peers.append(Peer(ip, port))
+        return peers
+
+    async def do_handshakes(self, info_hash):
+        tasks = list()
+        for peer in self.peers:
+            tasks.append(asyncio.create_task(peer.get_handshake(info_hash)))
+        try:
+            await asyncio.gather(*tasks, return_exceptions=False)
+        except Exception:
+            pass

@@ -29,9 +29,10 @@ class Torrent():
             throw_error(f"\"{self.file}\" could not be found")
         except DecodingError:
             throw_error(f"\"{self.file}\" could not be decoded")
-        keys = [b"info", b"announce", b"announce-list", b"url-list",
-                b"creation date", b"comment", b"created by", b"encoding"]
-        return populate_dict(data, keys)
+        else:
+            keys = [b"info", b"announce", b"announce-list", b"url-list",
+                    b"creation date", b"comment", b"created by", b"encoding"]
+            return populate_dict(data, keys)
 
     def get_info(self):
         keys = [b"piece length", b"pieces", b"private", b"name"]

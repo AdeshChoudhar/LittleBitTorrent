@@ -1,4 +1,4 @@
-from sys import exit 
+from sys import exit
 
 from Torrent import Torrent
 from Tracker import Tracker
@@ -12,5 +12,7 @@ if __name__ == "__main__":
     if args.show:
         torrent.show_metadata()
         exit(0)
-    
+
     tracker = Tracker(torrent)
+    for peer in tracker.peers:
+        print(f"Peer ({peer.ip}, {peer.port}): {peer.handshake} {peer.rate}")
