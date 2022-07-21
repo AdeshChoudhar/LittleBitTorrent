@@ -129,7 +129,7 @@ class Tracker:
         tasks = list()
         for peer in self.peers:
             tasks.append(asyncio.create_task(peer.get_handshake(info_hash)))
-        try:
-            await asyncio.gather(*tasks, return_exceptions=False)
-        except Exception:
-            pass
+        await asyncio.gather(*tasks)
+        for peer in self.peers:
+            if peer.handshake == bytes():
+                self.peers.remove(peer)
